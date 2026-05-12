@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Neuroadaptive IAF 测定</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="panel" id="entry-panel">
+        <div class="masthead">
+          <p class="eyebrow">Curry9 LSL · 闭眼静息</p>
+          <h1>IAF 第一阶段测定</h1>
+        </div>
+        <form id="subject-form" class="subject-form">
+          <label>
+            <span>被试编号</span>
+            <input id="subject-id" name="subject_id" type="text" autocomplete="off" required />
+          </label>
+          <label>
+            <span>年龄</span>
+            <input id="age" name="age" type="number" min="1" max="120" required />
+          </label>
+          <button type="submit">开始连接</button>
+        </form>
+        <dl class="config-list" id="config-list"></dl>
+      </section>
+
+      <section class="panel hidden" id="run-panel">
+        <div class="status-row">
+          <div>
+            <p class="eyebrow" id="phase-label">准备中</p>
+            <h2 id="run-title">正在搜索 LSL 数据流</h2>
+          </div>
+          <div class="timer" id="timer">120</div>
+        </div>
+        <div class="instruction" id="instruction">请保持准备，等待系统连接 EEG 数据流。</div>
+        <div class="progress-track">
+          <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <dl class="metrics">
+          <div>
+            <dt>样本数</dt>
+            <dd id="sample-count">0</dd>
+          </div>
+          <div>
+            <dt>采样率</dt>
+            <dd id="sampling-rate">--</dd>
+          </div>
+          <div>
+            <dt>目标通道</dt>
+            <dd id="target-channels">--</dd>
+          </div>
+        </dl>
+        <p class="message" id="message"></p>
+      </section>
+
+      <section class="panel hidden" id="result-panel">
+        <p class="eyebrow">结果</p>
+        <h2>IAF 计算完成</h2>
+        <div class="result-grid">
+          <div>
+            <span>PAF</span>
+            <strong id="paf">--</strong>
+          </div>
+          <div>
+            <span>CoG</span>
+            <strong id="cog">--</strong>
+          </div>
+          <div>
+            <span>Alpha 窗口</span>
+            <strong id="alpha-window">--</strong>
+          </div>
+          <div>
+            <span>有效通道</span>
+            <strong id="valid-channels">--</strong>
+          </div>
+        </div>
+        <div class="actions">
+          <button id="download-json" type="button">下载 JSON</button>
+          <button id="download-csv" type="button">下载 CSV</button>
+          <button id="new-session" type="button">新的被试</button>
+        </div>
+        <pre id="result-json"></pre>
+      </section>
+    </main>
+    <script src="/static/app.js" type="module"></script>
+  </body>
+</html>
