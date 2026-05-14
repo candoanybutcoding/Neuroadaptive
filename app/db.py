@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config import settings
+from app.default_materials import DEFAULT_MATERIAL_PROMPT_IDS, DEFAULT_MATERIAL_ROWS
 
 
 def utc_now() -> str:
@@ -52,7 +53,6 @@ def init_db(conn: sqlite3.Connection) -> None:
             vision_status TEXT DEFAULT '',
             neurological_history TEXT DEFAULT '',
             psychiatric_history TEXT DEFAULT '',
-            writing_experience TEXT DEFAULT '',
             genai_usage TEXT DEFAULT '',
             created_at TEXT NOT NULL
         );
@@ -265,7 +265,58 @@ def init_db(conn: sqlite3.Connection) -> None:
         );
         """
     )
+    seed_default_materials(conn)
     conn.commit()
+
+
+def seed_default_materials(conn: sqlite3.Connection) -> None:
+    prompt_ids = DEFAULT_MATERIAL_PROMPT_IDS
+    placeholders = ", ".join("?" for _ in prompt_ids)
+    if placeholders:
+        conn.execute(f"UPDATE materials SET active = 0 WHERE prompt_id NOT IN ({placeholders})", prompt_ids)
+    now = utc_now()
+    for row in DEFAULT_MATERIAL_ROWS:
+        conn.execute(
+            """
+            INSERT INTO materials (
+                id, phase, prompt_id, theme, subpremise_id, premise_text, suggestion_text,
+                suggestion_model, suggestion_generated_at, generation_prompt_version,
+                difficulty, condition_slot, participant_slot, notes, active, imported_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+            ON CONFLICT(prompt_id) DO UPDATE SET
+                phase = excluded.phase,
+                theme = excluded.theme,
+                subpremise_id = excluded.subpremise_id,
+                premise_text = excluded.premise_text,
+                suggestion_text = excluded.suggestion_text,
+                suggestion_model = excluded.suggestion_model,
+                suggestion_generated_at = excluded.suggestion_generated_at,
+                generation_prompt_version = excluded.generation_prompt_version,
+                difficulty = excluded.difficulty,
+                condition_slot = excluded.condition_slot,
+                participant_slot = excluded.participant_slot,
+                notes = excluded.notes,
+                active = 1,
+                imported_at = excluded.imported_at
+            """,
+            (
+                new_id(),
+                row["phase"],
+                row["prompt_id"],
+                row["theme"],
+                row["subpremise_id"],
+                row["premise_text"],
+                row["suggestion_text"],
+                row["suggestion_model"],
+                row["suggestion_generated_at"],
+                row["generation_prompt_version"],
+                row.get("difficulty", ""),
+                row.get("condition_slot", ""),
+                row.get("participant_slot", ""),
+                row.get("notes", ""),
+                now,
+            ),
+        )
 
 
 def new_id() -> str:

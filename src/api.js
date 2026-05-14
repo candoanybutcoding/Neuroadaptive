@@ -14,12 +14,6 @@ export function getConfig() {
   return request("/api/config");
 }
 
-export function importMaterials(file) {
-  const body = new FormData();
-  body.append("file", file);
-  return request("/api/materials/import", { method: "POST", body });
-}
-
 export function createSession(payload) {
   return request("/api/sessions", { method: "POST", body: JSON.stringify(payload) });
 }

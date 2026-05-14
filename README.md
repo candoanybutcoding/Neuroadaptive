@@ -9,7 +9,7 @@
 ### 功能
 
 - 入口页面填写被试编号、年龄、背景和资格字段。
-- 导入并校验正式材料表，未导入有效材料时不能创建正式会话。
+- 内置 20 条故事命题与对应 AI 提示，启动后自动写入材料库。
 - Stage 1：DAT 预试，保存原始答题。
 - Stage 2：睁眼屏幕基线 120 秒、闭眼 IAF 基线 120 秒。
 - Stage 3：五个练习试次，每个条件一次。
@@ -35,21 +35,9 @@ uvicorn app.main:app --reload
 http://127.0.0.1:8000
 ```
 
-### 材料表格式
+### 内置材料
 
-通过网页入口导入 `.csv` 或 `.xlsx`。必需列：
-
-```text
-phase,prompt_id,theme,subpremise_id,premise_text,suggestion_text,suggestion_model,suggestion_generated_at,generation_prompt_version
-```
-
-可选列：
-
-```text
-difficulty,condition_slot,participant_slot,notes
-```
-
-`phase` 必须为 `practice` 或 `formal`。正式运行要求至少 5 条 practice 和 20 条 formal。
+系统启动时会自动写入 20 条内置材料，并按被试编号 1-20 的正式排布常量生成 20 个试次。材料包含 `theme`、`premise_text`、`suggestion_text` 和稳定 slot 标识；无需从首页导入材料表。
 
 ### Curry9 / LSL 配置
 

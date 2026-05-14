@@ -40,6 +40,8 @@ input, select, textarea {
 }
 textarea { min-height: 96px; resize: vertical; }
 label { display: grid; gap: 7px; color: var(--muted); font-size: 14px; }
+fieldset { border: 0; margin: 0; padding: 0; }
+legend { padding: 0; }
 h1, h2, h3, p { margin-top: 0; }
 h1 { font-size: clamp(30px, 5vw, 52px); line-height: 1.05; margin-bottom: 20px; }
 .shell { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 36px 0; }
@@ -56,9 +58,12 @@ h1 { font-size: clamp(30px, 5vw, 52px); line-height: 1.05; margin-bottom: 20px; 
 .notice { margin: 0 0 18px; padding: 12px 14px; border-radius: 6px; }
 .notice.ready { background: #e4f3e9; }
 .notice.warning { background: #fff4df; }
-.file-label { margin: 18px 0; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 20px 0; }
 .form-grid.compact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.choice-field { display: grid; gap: 7px; color: var(--muted); font-size: 14px; }
+.choice-scale { display: flex; flex-wrap: wrap; align-items: center; min-height: 44px; gap: 8px 12px; }
+.choice-option { display: inline-flex; align-items: center; gap: 4px; color: var(--ink); }
+.choice-option input { width: auto; }
 .word-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin: 22px 0; }
 .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 22px 0; }
 .card, .rating-row { border: 1px solid var(--line); border-radius: 8px; padding: 16px; background: var(--soft); }
@@ -73,6 +78,32 @@ h1 { font-size: clamp(30px, 5vw, 52px); line-height: 1.05; margin-bottom: 20px; 
 .trial-header span { display: block; color: var(--muted); font-size: 13px; margin-bottom: 4px; }
 .trial-header strong { font-size: 24px; }
 .timer { min-width: 78px; text-align: right; color: var(--danger); font-size: 34px; font-weight: 850; font-variant-numeric: tabular-nums; }
+.ideation-screen {
+  min-height: min(720px, calc(100vh - 72px));
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  align-items: center;
+  justify-items: center;
+  color: var(--ink);
+}
+.ideation-timer {
+  color: var(--danger);
+  font-size: clamp(36px, 7vw, 72px);
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+.ideation-cross {
+  font-size: clamp(96px, 18vw, 180px);
+  line-height: 1;
+  font-weight: 300;
+}
+.ideation-dev {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  color: var(--muted);
+}
+.ideation-dev p { margin: 0; }
 .stage-body { margin-top: 28px; display: grid; gap: 18px; }
 .theme { font-weight: 800; color: var(--accent); }
 .premise, .suggestion {
@@ -82,11 +113,8 @@ h1 { font-size: clamp(30px, 5vw, 52px); line-height: 1.05; margin-bottom: 20px; 
   border-radius: 8px;
   background: #f7faf9;
 }
-.fixation-body { min-height: 360px; place-items: center; text-align: center; }
 .fixation { font-size: 96px; line-height: 1; font-weight: 300; }
 .writing-box { min-height: 240px; }
-.checkbox { display: flex; grid-template-columns: auto 1fr; align-items: center; gap: 10px; color: var(--ink); }
-.checkbox input { width: auto; }
 .ratings { display: grid; gap: 12px; }
 .rating-row { display: grid; grid-template-columns: minmax(220px, 1fr) auto; align-items: center; gap: 16px; }
 .radio-label { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; color: var(--ink); }

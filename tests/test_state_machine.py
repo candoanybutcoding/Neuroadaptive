@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from collections import Counter
 
-from app.state_machine import CONDITIONS, block_orders_for_participant, planned_timeline
+import pytest
+
+from app.state_machine import (
+    CONDITIONS,
+    block_orders_for_participant,
+    official_schedule_for_participant,
+    planned_timeline,
+)
 from app.text_validation import validate_four_sentence_continuation
 
 
@@ -19,6 +26,37 @@ def test_formal_15_trials_have_three_per_condition() -> None:
     counts = Counter(condition for block in blocks for condition in block)
 
     assert counts == {condition: 3 for condition in CONDITIONS}
+
+
+def test_official_participant_1_schedule_starts_with_five_practice_trials() -> None:
+    schedule = official_schedule_for_participant("1")
+
+    assert [cell.phase for cell in schedule[:5]] == ["practice"] * 5
+    formal_counts = Counter(cell.condition for cell in schedule if cell.phase == "formal")
+    assert formal_counts == {condition: 3 for condition in CONDITIONS}
+
+
+def test_official_participant_14_schedule_wraps_to_left_edge() -> None:
+    schedule = official_schedule_for_participant("14")
+
+    assert [cell.slot_id for cell in schedule[:8]] == [
+        "theme4-sub2",
+        "theme4-sub3",
+        "theme4-sub4",
+        "theme5-sub1",
+        "theme5-sub2",
+        "theme5-sub3",
+        "theme5-sub4",
+        "theme1-sub1",
+    ]
+    assert [cell.phase for cell in schedule[:5]] == ["practice"] * 5
+    assert schedule[7].condition == "fixed_delayed"
+
+
+@pytest.mark.parametrize("participant_id", ["0", "21", "P-001"])
+def test_official_schedule_rejects_out_of_range_ids(participant_id: str) -> None:
+    with pytest.raises(ValueError, match="PARTICIPANT_ID_OUT_OF_SCHEDULE_RANGE"):
+        official_schedule_for_participant(participant_id)
 
 
 def test_neuroadaptive_trigger_pauses_and_resumes_ideation() -> None:

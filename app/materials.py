@@ -28,6 +28,8 @@ OPTIONAL_COLUMNS = (
 )
 
 ALL_COLUMNS = REQUIRED_COLUMNS + OPTIONAL_COLUMNS
+MIN_PRACTICE_MATERIALS = 5
+MIN_FORMAL_MATERIALS = 15
 
 
 @dataclass(frozen=True)
@@ -82,10 +84,10 @@ def validate_material_rows(rows: Iterable[dict[str, object]]) -> MaterialValidat
             if not row.get(column, ""):
                 errors.append(f"Row {index}: {column} is required.")
 
-    if counts["practice"] < 5:
-        errors.append("At least 5 practice materials are required.")
-    if counts["formal"] < 20:
-        errors.append("At least 20 formal materials are required.")
+    if counts["practice"] < MIN_PRACTICE_MATERIALS:
+        errors.append(f"At least {MIN_PRACTICE_MATERIALS} practice materials are required.")
+    if counts["formal"] < MIN_FORMAL_MATERIALS:
+        errors.append(f"At least {MIN_FORMAL_MATERIALS} formal materials are required.")
 
     extra_columns = sorted(set(normalized[0]) - set(ALL_COLUMNS))
     if extra_columns:

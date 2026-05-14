@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from app.materials import validate_material_rows
+from app.materials import MIN_FORMAL_MATERIALS, MIN_PRACTICE_MATERIALS, validate_material_rows
 
 
-def material_rows(practice: int = 5, formal: int = 20) -> list[dict[str, str]]:
+def material_rows(practice: int = MIN_PRACTICE_MATERIALS, formal: int = MIN_FORMAL_MATERIALS) -> list[dict[str, str]]:
     rows = []
     for phase, count in (("practice", practice), ("formal", formal)):
         for index in range(count):
@@ -27,7 +27,7 @@ def test_material_validation_accepts_required_counts() -> None:
     result = validate_material_rows(material_rows())
 
     assert result.ok
-    assert result.counts == {"practice": 5, "formal": 20}
+    assert result.counts == {"practice": MIN_PRACTICE_MATERIALS, "formal": MIN_FORMAL_MATERIALS}
 
 
 def test_material_validation_rejects_missing_columns() -> None:
@@ -52,7 +52,7 @@ def test_material_validation_rejects_duplicate_prompt_ids() -> None:
 
 
 def test_material_validation_requires_formal_count() -> None:
-    result = validate_material_rows(material_rows(formal=19))
+    result = validate_material_rows(material_rows(formal=MIN_FORMAL_MATERIALS - 1))
 
     assert not result.ok
-    assert any("At least 20 formal" in error for error in result.errors)
+    assert any(f"At least {MIN_FORMAL_MATERIALS} formal" in error for error in result.errors)

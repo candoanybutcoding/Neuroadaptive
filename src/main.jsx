@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   completeTrial,
@@ -6,7 +6,6 @@ import {
   createSession,
   getConfig,
   getNextTrial,
-  importMaterials,
   postTrialEvents,
   saveClosingRatings,
   startCalibration,
@@ -14,8 +13,14 @@ import {
 } from "./api";
 import "./styles.css";
 
-const CONDITIONS = ["no_ai", "fixed_early", "fixed_delayed", "neuroadaptive", "yoked_sham"];
 const DAT_WORDS = 10;
+const GENAI_USAGE_OPTIONS = [
+  ["1", "1 从未使用"],
+  ["2", "2 偶尔尝试"],
+  ["3", "3 有一定使用经验"],
+  ["4", "4 经常使用"],
+  ["5", "5 非常熟练"]
+];
 const TRIAL_RATINGS = [
   ["autonomy", "我感到自己是创作过程的主动推动者"],
   ["ownership", "这个续写感觉像是我的作品"],
@@ -41,7 +46,6 @@ function App() {
     vision_status: "正常或矫正正常",
     neurological_history: "无",
     psychiatric_history: "无",
-    writing_experience: "",
     genai_usage: "",
     mode: "official",
     timer_preset: "official",
@@ -57,10 +61,8 @@ function App() {
   const [stageIndex, setStageIndex] = useState(0);
   const [stageStartedAt, setStageStartedAt] = useState(Date.now());
   const [remainingMs, setRemainingMs] = useState(0);
-  const [planningNotes, setPlanningNotes] = useState("");
   const [finalText, setFinalText] = useState("");
   const [ratings, setRatings] = useState({});
-  const [overrideText, setOverrideText] = useState(false);
   const [suggestionShown, setSuggestionShown] = useState(false);
   const [closingRatings, setClosingRatings] = useState({});
   const eventsRef = useRef({ phase_events: [], keystroke_events: [], suggestion_events: [], system_events: [] });
@@ -70,6 +72,7 @@ function App() {
   }, []);
 
   const currentStage = timeline[stageIndex] || null;
+  const devMode = session?.mode === "dev";
 
   useEffect(() => {
     if (!currentStage || currentStage.duration_seconds == null || view !== "trial") return;
@@ -84,25 +87,17 @@ function App() {
     return () => window.clearInterval(timer);
   }, [currentStage, stageStartedAt, view]);
 
-  async function handleMaterialImport(event) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setBusy(true);
-    try {
-      const result = await importMaterials(file);
-      setStatus(result.ok ? "材料导入成功。" : result.errors.join("；"));
-      setConfig(await getConfig());
-    } catch (error) {
-      setStatus(error.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function startSession() {
     setBusy(true);
     try {
-      const payload = { ...sessionForm, age: Number(sessionForm.age) };
+      const isDevSession = sessionForm.mode === "dev";
+      const participantId = sessionForm.participant_id.trim();
+      const parsedAge = Number(sessionForm.age);
+      const payload = {
+        ...sessionForm,
+        participant_id: isDevSession && !participantId ? "1" : participantId,
+        age: isDevSession && (!Number.isFinite(parsedAge) || parsedAge < 1) ? 1 : parsedAge
+      };
       const created = await createSession(payload);
       setSession(created.session);
       setView("dat");
@@ -115,10 +110,14 @@ function App() {
   }
 
   async function submitDatStage() {
-    if (datWords.some((word) => !word.trim())) return;
+    const words = datWords.map((word) => word.trim());
+    if (!devMode && words.some((word) => !word)) return;
+    const submittedWords = devMode
+      ? Array.from({ length: DAT_WORDS }, (_, index) => words[index] || `测试词${index + 1}`)
+      : words;
     setBusy(true);
     try {
-      const state = await submitDat(session.id, { words: datWords.map((word) => word.trim()) });
+      const state = await submitDat(session.id, { words: submittedWords });
       setSession(state.session);
       setView("calibration");
     } catch (error) {
@@ -172,10 +171,8 @@ function App() {
     const next = response.trial;
     setTrial(next);
     setDecision(null);
-    setPlanningNotes("");
     setFinalText("");
     setRatings({});
-    setOverrideText(false);
     setSuggestionShown(false);
     eventsRef.current = { phase_events: [], keystroke_events: [], suggestion_events: [], system_events: [] };
 
@@ -218,10 +215,10 @@ function App() {
     try {
       await flushEvents();
       const completion = await completeTrial(trial.trial_id, {
-        planning_notes: planningNotes,
+        planning_notes: "",
         final_text: finalText,
         suggestion_action: suggestionShown ? "ignored" : null,
-        text_validity_override: overrideText,
+        text_validity_override: devMode,
         ratings
       });
       if (completion.session_complete) {
@@ -275,12 +272,11 @@ function App() {
           config={config}
           form={sessionForm}
           setForm={setSessionForm}
-          onMaterialImport={handleMaterialImport}
           onStart={startSession}
           busy={busy}
         />
       )}
-      {view === "dat" && <DatView words={datWords} setWords={setDatWords} onSubmit={submitDatStage} busy={busy} />}
+      {view === "dat" && <DatView words={datWords} setWords={setDatWords} onSubmit={submitDatStage} busy={busy} allowEmpty={devMode} />}
       {view === "calibration" && (
         <CalibrationView
           config={config}
@@ -296,8 +292,6 @@ function App() {
           stage={currentStage}
           decision={decision}
           remainingMs={remainingMs}
-          planningNotes={planningNotes}
-          setPlanningNotes={setPlanningNotes}
           finalText={finalText}
           setFinalText={(value) => {
             setFinalText(value);
@@ -310,15 +304,14 @@ function App() {
           }}
           ratings={ratings}
           setRatings={setRatings}
-          overrideText={overrideText}
-          setOverrideText={setOverrideText}
+          devMode={devMode}
           onNext={() => advanceStage("submit")}
           onSubmit={submitTrial}
           busy={busy}
         />
       )}
       {view === "closing" && (
-        <ClosingView ratings={closingRatings} setRatings={setClosingRatings} onFinish={finishSession} busy={busy} />
+        <ClosingView ratings={closingRatings} setRatings={setClosingRatings} onFinish={finishSession} busy={busy} allowEmpty={devMode} />
       )}
       {view === "complete" && session && <CompleteView session={session} />}
       {status && <p className="status">{status}</p>}
@@ -326,19 +319,16 @@ function App() {
   );
 }
 
-function SetupView({ config, form, setForm, onMaterialImport, onStart, busy }) {
+function SetupView({ config, form, setForm, onStart, busy }) {
   const ready = config.materials.ready;
+  const required = config.materials.required;
   return (
     <section className="panel">
       <p className="eyebrow">Neuroadaptive Writing Experiment</p>
       <h1>实验会话入口</h1>
       <div className={ready ? "notice ready" : "notice warning"}>
-        材料状态：practice {config.materials.counts.practice}/5，formal {config.materials.counts.formal}/20
+        内置材料：practice {config.materials.counts.practice}/{required.practice}，formal {config.materials.counts.formal}/{required.formal}
       </div>
-      <label className="file-label">
-        导入正式材料 CSV/XLSX
-        <input type="file" accept=".csv,.xlsx,.xlsm" onChange={onMaterialImport} />
-      </label>
       <div className="form-grid">
         <Field label="被试编号" value={form.participant_id} onChange={(participant_id) => setForm({ ...form, participant_id })} />
         <Field label="年龄" value={form.age} onChange={(age) => setForm({ ...form, age })} type="number" />
@@ -346,11 +336,10 @@ function SetupView({ config, form, setForm, onMaterialImport, onStart, busy }) {
         <Field label="视力情况" value={form.vision_status} onChange={(vision_status) => setForm({ ...form, vision_status })} />
         <Field label="神经系统病史" value={form.neurological_history} onChange={(neurological_history) => setForm({ ...form, neurological_history })} />
         <Field label="精神心理病史" value={form.psychiatric_history} onChange={(psychiatric_history) => setForm({ ...form, psychiatric_history })} />
-        <Field label="写作经验" value={form.writing_experience} onChange={(writing_experience) => setForm({ ...form, writing_experience })} />
-        <Field label="GenAI 使用经验" value={form.genai_usage} onChange={(genai_usage) => setForm({ ...form, genai_usage })} />
+        <ChoiceScale label="GenAI 使用经验" name="genai_usage" value={form.genai_usage} onChange={(genai_usage) => setForm({ ...form, genai_usage })} options={GENAI_USAGE_OPTIONS} />
       </div>
       <div className="form-grid compact">
-        <Select label="运行模式" value={form.mode} onChange={(mode) => setForm({ ...form, mode, timer_preset: mode === "dev" ? "dev" : "official", controller_mode: mode === "dev" ? "simulation" : "real" })} options={[["official", "正式实验"], ["dev", "开发短计时"]]} />
+        <Select label="运行模式" value={form.mode} onChange={(mode) => setForm({ ...form, mode, timer_preset: mode === "dev" ? "dev" : "official", controller_mode: mode === "dev" ? "simulation" : "real" })} options={[["official", "正式实验"], ["dev", "模拟测试实验"]]} />
         <Select label="计时" value={form.timer_preset} onChange={(timer_preset) => setForm({ ...form, timer_preset })} options={[["official", "正式"], ["dev", "短计时"]]} />
         <Select label="控制器" value={form.controller_mode} onChange={(controller_mode) => setForm({ ...form, controller_mode })} options={[["real", "真实 EEG"], ["simulation", "模拟"]]} />
       </div>
@@ -359,7 +348,7 @@ function SetupView({ config, form, setForm, onMaterialImport, onStart, busy }) {
   );
 }
 
-function DatView({ words, setWords, onSubmit, busy }) {
+function DatView({ words, setWords, onSubmit, busy, allowEmpty }) {
   return (
     <section className="panel">
       <p className="eyebrow">Stage 1</p>
@@ -370,7 +359,7 @@ function DatView({ words, setWords, onSubmit, busy }) {
           <input key={index} value={word} onChange={(event) => setWords(words.map((item, i) => i === index ? event.target.value : item))} placeholder={`词 ${index + 1}`} />
         ))}
       </div>
-      <button onClick={onSubmit} disabled={busy || words.some((word) => !word.trim())}>提交 DAT</button>
+      <button onClick={onSubmit} disabled={busy || (!allowEmpty && words.some((word) => !word.trim()))}>提交 DAT</button>
     </section>
   );
 }
@@ -390,8 +379,22 @@ function CalibrationView({ config, calibration, onRun, onContinue, busy }) {
 }
 
 function TrialView(props) {
-  const { trial, stage, decision, remainingMs, planningNotes, setPlanningNotes, finalText, setFinalText, ratings, setRatings, overrideText, setOverrideText, onNext, onSubmit, busy } = props;
+  const { trial, stage, remainingMs, finalText, setFinalText, ratings, setRatings, devMode, onNext, onSubmit, busy } = props;
   const isTimed = stage.duration_seconds != null;
+  if (stage.stage === "ideation" || stage.stage === "ideation_resume") {
+    return (
+      <section className="ideation-screen">
+        <div className="ideation-timer">{isTimed ? formatRemaining(remainingMs) : "--:--"}</div>
+        <div className="ideation-cross">+</div>
+        {devMode && (
+          <div className="ideation-dev">
+            <p>当前条件：{conditionLabel(trial.condition)}</p>
+            <button onClick={onNext}>下一步</button>
+          </div>
+        )}
+      </section>
+    );
+  }
   return (
     <section className="panel trial-panel">
       <header className="trial-header">
@@ -409,13 +412,6 @@ function TrialView(props) {
           <button onClick={onNext}>已读完</button>
         </div>
       )}
-      {(stage.stage === "ideation" || stage.stage === "ideation_resume") && (
-        <div className="stage-body fixation-body">
-          <div className="fixation">+</div>
-          <p>请闭眼或保持注视，静默构思续写方向。</p>
-          {decision && <p className="muted">控制器：{decision.decision_source}</p>}
-        </div>
-      )}
       {stage.stage === "suggestion" && (
         <div className="stage-body">
           <p className="eyebrow">AI 建议</p>
@@ -425,33 +421,26 @@ function TrialView(props) {
       )}
       {stage.stage === "writing" && (
         <div className="stage-body writing">
-          <label>计划关键词/短语
-            <textarea value={planningNotes} onChange={(event) => setPlanningNotes(event.target.value.slice(0, 80))} />
-          </label>
           <label>四句续写
             <textarea value={finalText} onChange={(event) => setFinalText(event.target.value)} className="writing-box" />
-          </label>
-          <label className="checkbox">
-            <input type="checkbox" checked={overrideText} onChange={(event) => setOverrideText(event.target.checked)} />
-            研究者 override 四句校验
           </label>
           <button onClick={onNext}>进入试次评分</button>
         </div>
       )}
       {stage.stage === "rating" && (
-        <RatingForm items={TRIAL_RATINGS} values={ratings} setValues={setRatings} onSubmit={onSubmit} busy={busy} />
+        <RatingForm items={TRIAL_RATINGS} values={ratings} setValues={setRatings} onSubmit={onSubmit} busy={busy} allowEmpty={devMode} />
       )}
     </section>
   );
 }
 
-function ClosingView({ ratings, setRatings, onFinish, busy }) {
+function ClosingView({ ratings, setRatings, onFinish, busy, allowEmpty }) {
   return (
     <section className="panel">
       <p className="eyebrow">Stage 5</p>
       <h1>结束评分与说明</h1>
       <p className="muted">本实验比较不同 AI 介入时机。部分条件可能基于 EEG 或匹配日程决定是否展示建议；系统不会推断身份、临床状态或一般创造力。</p>
-      <RatingForm items={CLOSING_RATINGS} values={ratings} setValues={setRatings} onSubmit={onFinish} busy={busy} />
+      <RatingForm items={CLOSING_RATINGS} values={ratings} setValues={setRatings} onSubmit={onFinish} busy={busy} allowEmpty={allowEmpty} />
     </section>
   );
 }
@@ -478,6 +467,22 @@ function Select({ label, value, onChange, options }) {
   return <label>{label}<select value={value} onChange={(event) => onChange(event.target.value)}>{options.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>;
 }
 
+function ChoiceScale({ label, name, value, onChange, options }) {
+  return (
+    <fieldset className="choice-field">
+      <legend>{label}</legend>
+      <div className="choice-scale">
+        {options.map(([optionValue, text]) => (
+          <label key={optionValue} className="choice-option">
+            <input type="radio" name={name} checked={value === optionValue} onChange={() => onChange(optionValue)} />
+            {text}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 function CalibrationCard({ title, seconds, run, onRun, busy }) {
   return (
     <div className="card">
@@ -489,8 +494,8 @@ function CalibrationCard({ title, seconds, run, onRun, busy }) {
   );
 }
 
-function RatingForm({ items, values, setValues, onSubmit, busy }) {
-  const complete = items.every(([key]) => values[key]);
+function RatingForm({ items, values, setValues, onSubmit, busy, allowEmpty = false }) {
+  const complete = allowEmpty || items.every(([key]) => values[key]);
   return (
     <div className="stage-body">
       <div className="ratings">

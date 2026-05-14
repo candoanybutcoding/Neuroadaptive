@@ -13,8 +13,21 @@ from app.controller import (
     yoked_sham_decision,
 )
 from app.db import dumps_json, loads_json, new_id, row_to_dict, utc_now
-from app.materials import MaterialValidation, validate_material_rows
-from app.state_machine import CONDITIONS, block_orders_for_participant, next_break_seconds, planned_timeline
+from app.materials import (
+    MIN_FORMAL_MATERIALS,
+    MIN_PRACTICE_MATERIALS,
+    MaterialValidation,
+    validate_material_rows,
+)
+from app.state_machine import (
+    CONDITIONS,
+    block_orders_for_participant,
+    next_break_seconds,
+    official_condition_blocks_for_participant,
+    official_schedule_for_participant,
+    parse_official_participant_id,
+    planned_timeline,
+)
 from app.text_validation import validate_four_sentence_continuation
 
 
@@ -27,8 +40,9 @@ def material_status(conn: sqlite3.Connection) -> dict:
         counts[row["phase"]] = row["n"]
     return {
         "counts": counts,
-        "ready": counts["practice"] >= 5 and counts["formal"] >= 20,
-        "required": {"practice": 5, "formal": 20},
+        "ready": counts["practice"] >= MIN_PRACTICE_MATERIALS
+        and counts["formal"] >= MIN_FORMAL_MATERIALS,
+        "required": {"practice": MIN_PRACTICE_MATERIALS, "formal": MIN_FORMAL_MATERIALS},
     }
 
 
@@ -90,13 +104,6 @@ def create_session(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict:
     if not status["ready"]:
         raise ValueError("FORMAL_MATERIALS_NOT_READY")
 
-    participant_id = (payload.get("participant_id") or payload.get("subject_id") or "").strip()
-    if not participant_id:
-        participant_id = f"P-{utc_now().replace(':', '').replace('-', '')[:15]}"
-    age = int(payload.get("age") or 0)
-    if age < 1 or age > 120:
-        raise ValueError("AGE_OUT_OF_RANGE")
-
     mode = payload.get("mode") or "official"
     if mode not in {"dev", "official"}:
         raise ValueError("INVALID_SESSION_MODE")
@@ -105,17 +112,37 @@ def create_session(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict:
     if controller_mode not in {"simulation", "real"}:
         raise ValueError("INVALID_CONTROLLER_MODE")
 
+    participant_id = (payload.get("participant_id") or payload.get("subject_id") or "").strip()
+    if mode == "dev" and not participant_id:
+        participant_id = "1"
+    if mode == "official":
+        parse_official_participant_id(participant_id)
+
+    age_payload = payload.get("age")
+    if mode == "dev" and (age_payload is None or age_payload == ""):
+        age_payload = 1
+    try:
+        age = int(age_payload or 0)
+    except (TypeError, ValueError):
+        raise ValueError("AGE_OUT_OF_RANGE") from None
+    if age < 1 or age > 120:
+        raise ValueError("AGE_OUT_OF_RANGE")
+
     session_id = new_id()
     now = utc_now()
-    block_order = block_orders_for_participant(participant_id)
+    block_order = (
+        official_condition_blocks_for_participant(participant_id)
+        if mode == "official"
+        else block_orders_for_participant(participant_id)
+    )
     yoked_seed = choose_yoked_seed(participant_id)
     with conn:
         conn.execute(
             """
             INSERT OR REPLACE INTO participants (
                 id, age, native_language, vision_status, neurological_history,
-                psychiatric_history, writing_experience, genai_usage, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM participants WHERE id = ?), ?))
+                psychiatric_history, genai_usage, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM participants WHERE id = ?), ?))
             """,
             (
                 participant_id,
@@ -124,7 +151,6 @@ def create_session(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict:
                 payload.get("vision_status", ""),
                 payload.get("neurological_history", ""),
                 payload.get("psychiatric_history", ""),
-                payload.get("writing_experience", ""),
                 payload.get("genai_usage", ""),
                 participant_id,
                 now,
@@ -153,7 +179,7 @@ def create_session(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict:
                 now,
             ),
         )
-        _create_schedule(conn, session_id, participant_id, block_order)
+        _create_schedule(conn, session_id, participant_id, mode, block_order)
     return get_session_state(conn, session_id)
 
 
@@ -479,17 +505,34 @@ def export_session(conn: sqlite3.Connection, session_id: str, fmt: str) -> Any:
     return _trials_csv(payload["trials"], payload["ratings"])
 
 
-def _create_schedule(conn: sqlite3.Connection, session_id: str, participant_id: str, block_order: list[list[str]]) -> None:
-    practice_materials = _select_materials(conn, "practice", 5, participant_id)
-    formal_materials = _select_materials(conn, "formal", 15, participant_id)
+def _create_schedule(
+    conn: sqlite3.Connection,
+    session_id: str,
+    participant_id: str,
+    mode: str,
+    block_order: list[list[str]],
+) -> None:
     schedule: list[tuple[str, int, str, sqlite3.Row]] = []
-    for index, condition in enumerate(CONDITIONS):
-        schedule.append(("practice", 0, condition, practice_materials[index]))
-    formal_index = 0
-    for block_index, conditions in enumerate(block_order, start=1):
-        for condition in conditions:
-            schedule.append(("formal", block_index, condition, formal_materials[formal_index]))
-            formal_index += 1
+    if mode == "official":
+        formal_index = 0
+        for cell in official_schedule_for_participant(participant_id):
+            material = _select_material_by_slot(conn, cell.slot_id)
+            if cell.phase == "practice":
+                block_index = 0
+            else:
+                block_index = formal_index // 5 + 1
+                formal_index += 1
+            schedule.append((cell.phase, block_index, cell.condition, material))
+    else:
+        practice_materials = _select_materials(conn, "practice", 5, participant_id)
+        formal_materials = _select_materials(conn, "formal", 15, participant_id)
+        for index, condition in enumerate(CONDITIONS):
+            schedule.append(("practice", 0, condition, practice_materials[index]))
+        formal_index = 0
+        for block_index, conditions in enumerate(block_order, start=1):
+            for condition in conditions:
+                schedule.append(("formal", block_index, condition, formal_materials[formal_index]))
+                formal_index += 1
     total = len(schedule)
     for order, (phase, block_index, condition, material) in enumerate(schedule, start=1):
         conn.execute(
@@ -500,6 +543,16 @@ def _create_schedule(conn: sqlite3.Connection, session_id: str, participant_id: 
             """,
             (new_id(), session_id, material["id"], phase, condition, block_index, order, total),
         )
+
+
+def _select_material_by_slot(conn: sqlite3.Connection, slot_id: str) -> sqlite3.Row:
+    row = conn.execute(
+        "SELECT * FROM materials WHERE active = 1 AND condition_slot = ?",
+        (slot_id,),
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"MATERIAL_SLOT_NOT_FOUND:{slot_id}")
+    return row
 
 
 def _select_materials(conn: sqlite3.Connection, phase: str, count: int, participant_id: str) -> list[sqlite3.Row]:

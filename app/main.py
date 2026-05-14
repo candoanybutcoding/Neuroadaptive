@@ -52,13 +52,12 @@ if DIST_DIR.exists():
 
 
 class SessionRequest(BaseModel):
-    participant_id: str = Field(min_length=1, max_length=80)
-    age: int = Field(ge=1, le=120)
+    participant_id: str = Field(default="", max_length=80)
+    age: int | str | None = None
     native_language: str = ""
     vision_status: str = ""
     neurological_history: str = ""
     psychiatric_history: str = ""
-    writing_experience: str = ""
     genai_usage: str = ""
     mode: str = "official"
     timer_preset: str | None = None
@@ -282,10 +281,11 @@ def _http_error(exc: Exception) -> HTTPException:
         "FORMAL_MATERIALS_NOT_READY",
         "FOUR_SENTENCE_REQUIREMENT_NOT_MET",
         "AGE_OUT_OF_RANGE",
+        "PARTICIPANT_ID_OUT_OF_SCHEDULE_RANGE",
         "INVALID_SESSION_MODE",
         "INVALID_CONTROLLER_MODE",
         "INVALID_CALIBRATION_TYPE",
-    } or message.startswith("NOT_ENOUGH_"):
+    } or message.startswith("NOT_ENOUGH_") or message.startswith("MATERIAL_SLOT_NOT_FOUND"):
         status = 409
     elif message.startswith("Unsupported material") or message.startswith("Missing required"):
         status = 422

@@ -24,5 +24,5 @@ def validate_four_sentence_continuation(text: str, override: bool = False) -> di
         "raw_valid": valid,
         "sentence_count": sentence_count,
         "override_used": bool(override and not valid),
-        "message": "" if valid or override else "续写必须包含正好四个句子，或由研究者勾选 override。",
+        "message": "" if valid or override else "续写必须包含正好四个句子。",
     }
