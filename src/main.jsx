@@ -74,6 +74,12 @@ function App() {
   const currentStage = timeline[stageIndex] || null;
   const devMode = session?.mode === "dev";
 
+  const progressMap = { setup: 5, dat: 18, calibration: 35, trial: 55, closing: 94, complete: 100 };
+  let progress = progressMap[view] || 0;
+  if (view === "trial" && trial) {
+    progress = 55 + ((trial.trial_order - 1) / Math.max(1, trial.total_trials)) * 32;
+  }
+
   useEffect(() => {
     if (!currentStage || currentStage.duration_seconds == null || view !== "trial") return;
     const durationMs = currentStage.duration_seconds * 1000;
@@ -267,6 +273,7 @@ function App() {
 
   return (
     <main className="shell">
+      <TopProgress value={progress} />
       {view === "setup" && (
         <SetupView
           config={config}
@@ -290,6 +297,8 @@ function App() {
         <TrialView
           trial={trial}
           stage={currentStage}
+          timeline={timeline}
+          stageIndex={stageIndex}
           decision={decision}
           remainingMs={remainingMs}
           finalText={finalText}
@@ -326,9 +335,11 @@ function SetupView({ config, form, setForm, onStart, busy }) {
     <section className="panel">
       <p className="eyebrow">Neuroadaptive Writing Experiment</p>
       <h1>实验会话入口</h1>
+      <p className="muted">欢迎参加神经自适应 AI 辅助创意写作实验。请填写以下信息以开始。</p>
       <div className={ready ? "notice ready" : "notice warning"}>
         内置材料：practice {config.materials.counts.practice}/{required.practice}，formal {config.materials.counts.formal}/{required.formal}
       </div>
+      <h2 className="section-title">被试信息</h2>
       <div className="form-grid">
         <Field label="被试编号" value={form.participant_id} onChange={(participant_id) => setForm({ ...form, participant_id })} />
         <Field label="年龄" value={form.age} onChange={(age) => setForm({ ...form, age })} type="number" />
@@ -338,6 +349,7 @@ function SetupView({ config, form, setForm, onStart, busy }) {
         <Field label="精神心理病史" value={form.psychiatric_history} onChange={(psychiatric_history) => setForm({ ...form, psychiatric_history })} />
         <ChoiceScale label="GenAI 使用经验" name="genai_usage" value={form.genai_usage} onChange={(genai_usage) => setForm({ ...form, genai_usage })} options={GENAI_USAGE_OPTIONS} />
       </div>
+      <h2 className="section-title">实验设置</h2>
       <div className="form-grid compact">
         <Select label="运行模式" value={form.mode} onChange={(mode) => setForm({ ...form, mode, timer_preset: mode === "dev" ? "dev" : "official", controller_mode: mode === "dev" ? "simulation" : "real" })} options={[["official", "正式实验"], ["dev", "模拟测试实验"]]} />
         <Select label="计时" value={form.timer_preset} onChange={(timer_preset) => setForm({ ...form, timer_preset })} options={[["official", "正式"], ["dev", "短计时"]]} />
@@ -353,7 +365,8 @@ function DatView({ words, setWords, onSubmit, busy, allowEmpty }) {
     <section className="panel">
       <p className="eyebrow">Stage 1</p>
       <h1>DAT 预试</h1>
-      <p className="muted">请输入 10 个尽可能语义距离远的中文词。</p>
+      <p className="muted">请输入 10 个尽可能语义距离远的中文词。这些词将用于后续的实验材料匹配。</p>
+      <p className="hint">例如：冰川、算盘、量子、茶叶、太空、蒲公英、青铜、默剧、苔藓、彗星</p>
       <div className="word-grid">
         {words.map((word, index) => (
           <input key={index} value={word} onChange={(event) => setWords(words.map((item, i) => i === index ? event.target.value : item))} placeholder={`词 ${index + 1}`} />
@@ -369,6 +382,7 @@ function CalibrationView({ config, calibration, onRun, onContinue, busy }) {
     <section className="panel">
       <p className="eyebrow">Stage 2</p>
       <h1>EEG 基线校准</h1>
+      <p className="muted">请依次完成睁眼与闭眼两项基线采集。采集过程中请保持放松，尽量减少眨眼和身体移动。</p>
       <div className="cards">
         <CalibrationCard title="睁眼屏幕基线" seconds={config.eyes_open_seconds} run={calibration.eyesOpen} onRun={() => onRun("eyes-open")} busy={busy} />
         <CalibrationCard title="闭眼 IAF 基线" seconds={config.eyes_closed_seconds} run={calibration.eyesClosed} onRun={() => onRun("eyes-closed")} busy={busy} />
@@ -379,13 +393,14 @@ function CalibrationView({ config, calibration, onRun, onContinue, busy }) {
 }
 
 function TrialView(props) {
-  const { trial, stage, remainingMs, finalText, setFinalText, ratings, setRatings, devMode, onNext, onSubmit, busy } = props;
+  const { trial, stage, timeline, stageIndex, remainingMs, finalText, setFinalText, ratings, setRatings, devMode, onNext, onSubmit, busy } = props;
   const isTimed = stage.duration_seconds != null;
   if (stage.stage === "ideation" || stage.stage === "ideation_resume") {
     return (
       <section className="ideation-screen">
         <div className="ideation-timer">{isTimed ? formatRemaining(remainingMs) : "--:--"}</div>
         <div className="ideation-cross">+</div>
+        <p className="ideation-hint">请注视屏幕中央的十字，保持安静构思</p>
         {devMode && (
           <div className="ideation-dev">
             <p>当前条件：{conditionLabel(trial.condition)}</p>
@@ -397,6 +412,7 @@ function TrialView(props) {
   }
   return (
     <section className="panel trial-panel">
+      <StageTimeline timeline={timeline} stageIndex={stageIndex} />
       <header className="trial-header">
         <div>
           <span>{trial.phase === "practice" ? "练习" : "正式"} · 试次 {trial.trial_order}/{trial.total_trials}</span>
@@ -409,7 +425,7 @@ function TrialView(props) {
         <div className="stage-body">
           <p className="theme">主题：{trial.material.theme}</p>
           <p className="premise">{trial.material.premise_text}</p>
-          <button onClick={onNext}>已读完</button>
+          <button onClick={onNext}>已读完，开始构思</button>
         </div>
       )}
       {stage.stage === "suggestion" && (
@@ -424,6 +440,7 @@ function TrialView(props) {
           <label>四句续写
             <textarea value={finalText} onChange={(event) => setFinalText(event.target.value)} className="writing-box" />
           </label>
+          <p className="writing-hint">请根据主题续写约四句故事内容，无需添加标题。</p>
           <button onClick={onNext}>进入试次评分</button>
         </div>
       )}
@@ -439,7 +456,7 @@ function ClosingView({ ratings, setRatings, onFinish, busy, allowEmpty }) {
     <section className="panel">
       <p className="eyebrow">Stage 5</p>
       <h1>结束评分与说明</h1>
-      <p className="muted">本实验比较不同 AI 介入时机。部分条件可能基于 EEG 或匹配日程决定是否展示建议；系统不会推断身份、临床状态或一般创造力。</p>
+      <p className="muted">本实验比较不同 AI 介入时机对创作体验的影响。部分条件可能基于 EEG 特征或预设日程决定是否展示建议；系统不会推断您的身份、临床状态或一般创造力水平。</p>
       <RatingForm items={CLOSING_RATINGS} values={ratings} setValues={setRatings} onSubmit={onFinish} busy={busy} allowEmpty={allowEmpty} />
     </section>
   );
@@ -447,9 +464,11 @@ function ClosingView({ ratings, setRatings, onFinish, busy, allowEmpty }) {
 
 function CompleteView({ session }) {
   return (
-    <section className="panel">
+    <section className="panel complete-panel">
+      <div className="complete-icon" aria-hidden="true">✓</div>
       <p className="eyebrow">完成</p>
       <h1>数据已保存</h1>
+      <p className="muted">感谢您的参与。您可以选择以下格式导出本次实验数据。</p>
       <div className="actions">
         <a className="button-link" href={`/api/export/${session.id}.json`}>导出 JSON</a>
         <a className="button-link" href={`/api/export/${session.id}.csv`}>导出 CSV</a>
@@ -484,12 +503,13 @@ function ChoiceScale({ label, name, value, onChange, options }) {
 }
 
 function CalibrationCard({ title, seconds, run, onRun, busy }) {
+  const statusClass = run?.status === "finished" ? "finished" : run?.status === "error" ? "error" : run?.status === "running" ? "running" : "idle";
   return (
     <div className="card">
       <h3>{title}</h3>
-      <p>{seconds}s</p>
-      <p className="muted">{run?.message || run?.status || "未开始"}</p>
-      <button onClick={onRun} disabled={busy}>开始</button>
+      <p className="duration">时长：{seconds} 秒</p>
+      <p className={`card-status ${statusClass}`}>{run?.message || run?.status || "未开始"}</p>
+      <button onClick={onRun} disabled={busy || run?.status === "running"}>开始</button>
     </div>
   );
 }
@@ -502,7 +522,7 @@ function RatingForm({ items, values, setValues, onSubmit, busy, allowEmpty = fal
         {items.map(([key, label]) => (
           <div className="rating-row" key={key}>
             <span>{label}</span>
-            <div>
+            <div className="rating-scale">
               {[1, 2, 3, 4, 5, 6, 7].map((value) => (
                 <label key={value} className="radio-label">
                   <input type="radio" name={key} checked={values[key] === value} onChange={() => setValues({ ...values, [key]: value })} />
@@ -514,6 +534,37 @@ function RatingForm({ items, values, setValues, onSubmit, busy, allowEmpty = fal
         ))}
       </div>
       <button onClick={onSubmit} disabled={busy || !complete}>提交</button>
+    </div>
+  );
+}
+
+function TopProgress({ value }) {
+  return (
+    <div className="top-progress" aria-hidden="true">
+      <div className="top-progress__fill" style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
+    </div>
+  );
+}
+
+function StageTimeline({ timeline, stageIndex }) {
+  const labels = {
+    reading: "阅读",
+    ideation: "构思",
+    ideation_resume: "继续构思",
+    suggestion: "AI建议",
+    writing: "续写",
+    rating: "评分"
+  };
+  return (
+    <div className="stage-timeline" aria-label="试次阶段进度">
+      {timeline.map((item, index) => (
+        <React.Fragment key={item.stage + String(index)}>
+          {index > 0 && <span className="stage-timeline__arrow">→</span>}
+          <span className={`stage-timeline__item ${index < stageIndex ? "done" : ""} ${index === stageIndex ? "active" : ""}`}>
+            {labels[item.stage] || item.stage}
+          </span>
+        </React.Fragment>
+      ))}
     </div>
   );
 }
